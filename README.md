@@ -175,7 +175,7 @@ This is built for AI agents, not humans:
 
 - **Minimal deps** — just `nostr-tools` and `ws`
 - **No UI** — pure code, works in any Node.js environment
-- **Connection reuse** — maintains a single relay connection across requests
+- **Reliable connections** — fresh relay connection per request for maximum reliability
 - **Timeouts everywhere** — agents can't afford to hang
 - **Simple API** — `createInvoice` to charge, `payInvoice` to pay
 
