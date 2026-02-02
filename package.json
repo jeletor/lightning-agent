@@ -1,0 +1,16 @@
+{
+  "name": "lightning-agent",
+  "version": "0.1.0",
+  "description": "Lightning payments for AI agents. Two functions: charge and pay.",
+  "main": "lib/index.js",
+  "bin": {
+    "lightning-agent": "bin/lightning-agent.js"
+  },
+  "keywords": ["lightning", "bitcoin", "ai", "agent", "nostr", "nwc", "payments"],
+  "author": "Jeletor",
+  "license": "MIT",
+  "dependencies": {
+    "nostr-tools": "^2.0.0",
+    "ws": "^8.0.0"
+  }
+}
