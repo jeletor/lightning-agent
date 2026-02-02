@@ -33,7 +33,9 @@ const { paid } = await wallet.waitForPayment(paymentHash, { timeoutMs: 60000 });
 
 // Pay an invoice (spend)
 const { preimage } = await wallet.payInvoice(someInvoice);
-console.log(`Paid! Preimage: ${preimage}`);
+
+// Or pay a Lightning address directly
+await wallet.payAddress('alice@getalby.com', { amountSats: 10 });
 
 // Done
 wallet.close();
@@ -85,6 +87,19 @@ const { preimage, paymentHash } = await wallet.payInvoice('lnbc50u1p...');
 
 **Options:** `{ timeoutMs: 30000 }`
 
+### `wallet.payAddress(address, opts)`
+
+Pay a Lightning address (user@domain) via LNURL-pay. Resolves the address to an invoice and pays it in one call.
+
+```javascript
+const result = await wallet.payAddress('alice@getalby.com', {
+  amountSats: 100,
+  comment: 'Great work!',  // optional
+  timeoutMs: 30000          // optional
+});
+// { preimage, paymentHash, invoice, amountSats }
+```
+
 ### `wallet.waitForPayment(paymentHash, opts?)`
 
 Poll until an invoice is paid (or timeout).
@@ -108,6 +123,15 @@ const { amountSats, network } = wallet.decodeInvoice('lnbc50u1p...');
 ### `wallet.close()`
 
 Close the relay connection. Call when done.
+
+### `resolveLightningAddress(address, amountSats, comment?)`
+
+Resolve a Lightning address to a bolt11 invoice without paying (useful for inspection).
+
+```javascript
+const { resolveLightningAddress } = require('lightning-agent');
+const { invoice, minSats, maxSats } = await resolveLightningAddress('bob@walletofsatoshi.com', 50);
+```
 
 ### `decodeBolt11(invoice)`
 

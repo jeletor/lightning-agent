@@ -1,6 +1,6 @@
 'use strict';
 
-const { createWallet, parseNwcUrl, decodeBolt11, NWCWallet } = require('./lib');
+const { createWallet, parseNwcUrl, decodeBolt11, resolveLightningAddress, NWCWallet } = require('./lib');
 
 let passed = 0;
 let failed = 0;
@@ -118,6 +118,32 @@ const decoded = wallet.decodeInvoice('lnbc50u1ptest');
 assert(decoded.amountSats === 5000, 'wallet.decodeInvoice works');
 wallet.close();
 
+// ─── Lightning Address tests ───
+console.log('\n⚡ Lightning Address');
+
+assert(typeof resolveLightningAddress === 'function', 'resolveLightningAddress is exported');
+
+// Wallet has payAddress method
+const walletForAddr = createWallet(testNwcUrl);
+assert(typeof walletForAddr.payAddress === 'function', 'wallet has payAddress()');
+walletForAddr.close();
+
+// payAddress validation
+const walletForAddrTest = createWallet(testNwcUrl);
+
+// Test via promise catches
+const addrTests = Promise.all([
+  walletForAddrTest.payAddress('invalid', { amountSats: 10 })
+    .then(() => assert(false, 'payAddress rejects invalid address'))
+    .catch(e => assert(e.message.includes('Invalid Lightning address'), 'payAddress rejects invalid address')),
+  walletForAddrTest.payAddress('user@domain.com', {})
+    .then(() => assert(false, 'payAddress requires amountSats'))
+    .catch(e => assert(e.message.includes('amountSats'), 'payAddress requires amountSats')),
+  walletForAddrTest.payAddress('user@domain.com', { amountSats: -5 })
+    .then(() => assert(false, 'payAddress rejects negative amount'))
+    .catch(e => assert(e.message.includes('amountSats'), 'payAddress rejects negative amount')),
+]).then(() => walletForAddrTest.close());
+
 // createWallet from env
 console.log('\n🌍 createWallet from env');
 process.env.NWC_URL = testNwcUrl;
@@ -128,11 +154,13 @@ delete process.env.NWC_URL;
 
 assertThrows(() => createWallet(), 'createWallet() throws without URL or env');
 
-// ─── Summary ───
-console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-console.log(`Results: ${passed} passed, ${failed} failed`);
-if (failed > 0) {
-  process.exit(1);
-} else {
-  console.log('All tests passed! ✅');
-}
+// ─── Summary (wait for async tests) ───
+addrTests.then(() => {
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`Results: ${passed} passed, ${failed} failed`);
+  if (failed > 0) {
+    process.exit(1);
+  } else {
+    console.log('All tests passed! ✅');
+  }
+});

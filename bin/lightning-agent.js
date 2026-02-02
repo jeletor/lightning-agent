@@ -10,6 +10,7 @@ Usage:
   lightning-agent balance                        Check wallet balance
   lightning-agent invoice <sats> [description]   Create an invoice
   lightning-agent pay <bolt11>                   Pay an invoice
+  lightning-agent send <address> <sats>          Pay a Lightning address
   lightning-agent decode <bolt11>                Decode an invoice (offline)
   lightning-agent wait <payment_hash> [timeout]  Wait for payment
 
@@ -21,6 +22,7 @@ Examples:
   lightning-agent balance
   lightning-agent invoice 50 "AI query fee"
   lightning-agent pay lnbc50u1p...
+  lightning-agent send alice@getalby.com 100
   lightning-agent decode lnbc50u1p...
 `.trim();
 
@@ -95,6 +97,23 @@ async function main() {
           process.exit(1);
         }
         const result = await wallet.payInvoice(invoice);
+        console.log(`Paid! Preimage: ${result.preimage}`);
+        break;
+      }
+
+      case 'send': {
+        const address = args[1];
+        const sats = parseInt(args[2], 10);
+        if (!address || !address.includes('@')) {
+          console.error('Error: Lightning address required (user@domain)');
+          process.exit(1);
+        }
+        if (!sats || sats <= 0) {
+          console.error('Error: amount in sats required (positive integer)');
+          process.exit(1);
+        }
+        console.error(`Sending ${sats} sats to ${address}...`);
+        const result = await wallet.payAddress(address, { amountSats: sats });
         console.log(`Paid! Preimage: ${result.preimage}`);
         break;
       }

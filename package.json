@@ -1,6 +1,6 @@
 {
   "name": "lightning-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lightning payments for AI agents. Two functions: charge and pay.",
   "main": "lib/index.js",
   "bin": {
