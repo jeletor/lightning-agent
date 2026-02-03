@@ -1,8 +1,8 @@
 # ⚡ lightning-agent
 
-Lightning payments for AI agents. Two functions: charge and pay.
+Lightning toolkit for AI agents. Payments, auth, escrow, and streaming micropayments.
 
-A tiny SDK that gives any AI agent the ability to send and receive Bitcoin Lightning payments using [Nostr Wallet Connect (NWC)](https://nwc.dev). No browser, no UI — just code. Connect your agent to an NWC-compatible wallet (Alby Hub, Mutiny, etc.) and start transacting in sats.
+A SDK that gives AI agents the ability to transact, authenticate, escrow work, and stream content for sats — all over [Nostr Wallet Connect (NWC)](https://nwc.dev). No browser, no UI, no bank accounts. Connect to any NWC-compatible wallet (Alby Hub, Mutiny, etc.) and start building the agent economy.
 
 ## Install
 
@@ -10,7 +10,18 @@ A tiny SDK that gives any AI agent the ability to send and receive Bitcoin Light
 npm install lightning-agent
 ```
 
-## Quick Start
+## What's in the box
+
+| Module | What it does | Since |
+|--------|-------------|-------|
+| **Wallet** | Send/receive Lightning payments, decode invoices | v0.1.0 |
+| **Auth** | LNURL-auth — login with your Lightning wallet | v0.3.0 |
+| **Escrow** | Hold funds until work is verified, then release or refund | v0.3.0 |
+| **Stream** | Pay-per-token streaming micropayments | v0.3.0 |
+
+---
+
+## Quick Start: Payments
 
 ```javascript
 const { createWallet } = require('lightning-agent');
@@ -19,158 +30,248 @@ const wallet = createWallet('nostr+walletconnect://...');
 
 // Check balance
 const { balanceSats } = await wallet.getBalance();
-console.log(`Balance: ${balanceSats} sats`);
 
 // Create an invoice (get paid)
 const { invoice, paymentHash } = await wallet.createInvoice({
   amountSats: 50,
   description: 'Text generation query'
 });
-console.log(`Pay me: ${invoice}`);
 
 // Wait for payment
-const { paid } = await wallet.waitForPayment(paymentHash, { timeoutMs: 60000 });
+const { paid } = await wallet.waitForPayment(paymentHash);
 
-// Pay an invoice (spend)
+// Pay an invoice
 const { preimage } = await wallet.payInvoice(someInvoice);
 
-// Or pay a Lightning address directly
+// Pay a Lightning address directly
 await wallet.payAddress('alice@getalby.com', { amountSats: 10 });
 
-// Done
 wallet.close();
 ```
 
-## API Reference
+---
+
+## Auth (LNURL-auth)
+
+Login with a Lightning wallet. No passwords, no OAuth — just a signed cryptographic challenge.
+
+### Server side
+
+```javascript
+const { createAuthServer, signAuth } = require('lightning-agent');
+
+const auth = createAuthServer({
+  callbackUrl: 'https://api.example.com/auth',
+  challengeTtlMs: 300000 // 5 minutes
+});
+
+// Generate a challenge
+const { k1, lnurl } = auth.createChallenge();
+// → lnurl can be rendered as QR for wallet apps
+// → k1 can be sent directly to agent clients
+
+// Verify a signed response
+const result = auth.verify(k1, sig, key);
+// → { valid: true, pubkey: '03abc...' }
+
+// Or use as Express middleware
+app.get('/auth', auth.middleware((pubkey, req, res) => {
+  console.log('Authenticated:', pubkey);
+}));
+```
+
+### Client side (agent)
+
+```javascript
+const { signAuth, authenticate } = require('lightning-agent');
+
+// Sign a challenge manually
+const { sig, key } = signAuth(k1, myPrivateKeyHex);
+// → Send sig + key back to server
+
+// Or complete the full flow automatically
+const result = await authenticate('lnurl1...', myPrivateKeyHex);
+if (result.success) console.log('Logged in as', result.pubkey);
+```
+
+### API
+
+#### `createAuthServer(opts?)`
+- `opts.challengeTtlMs` — Challenge validity in ms (default 300000)
+- `opts.callbackUrl` — Full URL for LNURL generation
+
+Returns: `{ createChallenge(), verify(k1, sig, key), middleware(onAuth), activeChallenges }`
+
+#### `signAuth(k1, privateKey)`
+Sign a challenge with a secp256k1 private key. Returns `{ sig, key }` (DER signature + compressed pubkey).
+
+#### `authenticate(lnurlOrUrl, privateKey)`
+Complete an LNURL-auth flow: fetch challenge → sign → submit. Returns `{ success, pubkey, error? }`.
+
+---
+
+## Escrow
+
+Hold funds until work is verified. Client pays into escrow → worker delivers → escrow releases payment. If the worker doesn't deliver, funds are refunded.
+
+```javascript
+const { createWallet, createEscrowManager } = require('lightning-agent');
+
+const escrowWallet = createWallet('nostr+walletconnect://...');
+const mgr = createEscrowManager(escrowWallet, {
+  onStateChange: (id, from, to) => console.log(`${id}: ${from} → ${to}`)
+});
+
+// 1. Create escrow
+const escrow = await mgr.create({
+  amountSats: 500,
+  workerAddress: 'worker@getalby.com',
+  description: 'Translate 200 words EN→ES',
+  deadlineMs: 3600000 // 1 hour
+});
+console.log('Client should pay:', escrow.invoice);
+
+// 2. Confirm funding (waits for payment)
+await mgr.fund(escrow.id);
+
+// 3. Worker delivers proof
+mgr.deliver(escrow.id, { url: 'https://example.com/result', hash: 'sha256...' });
+
+// 4a. Release to worker
+await mgr.release(escrow.id);
+
+// 4b. Or refund to client
+await mgr.refund(escrow.id, 'client@getalby.com', 'Worker no-show');
+
+// 4c. Or dispute
+mgr.dispute(escrow.id, 'Quality insufficient', 'client');
+```
+
+### Escrow states
+
+```
+CREATED → FUNDED → DELIVERED → RELEASED
+                             → REFUNDED
+                  → EXPIRED (auto, on deadline)
+                  → DISPUTED
+```
+
+### API
+
+#### `createEscrowManager(wallet, opts?)`
+- `wallet` — NWC wallet that holds escrowed funds
+- `opts.onStateChange(id, oldState, newState, escrow)` — State change callback
+- `opts.defaultDeadlineMs` — Default deadline (default 3600000)
+
+Returns: `{ create(config), fund(id, opts?), deliver(id, proof), release(id), refund(id, address, reason?), dispute(id, reason, raisedBy), get(id), list(state?), close() }`
+
+#### `EscrowState`
+Enum: `CREATED`, `FUNDED`, `DELIVERED`, `RELEASED`, `REFUNDED`, `EXPIRED`, `DISPUTED`
+
+---
+
+## Streaming Payments
+
+Pay-per-token micropayments. Lightning is the only payment system that can handle fractions-of-a-cent per word.
+
+### Provider (server)
+
+```javascript
+const { createWallet, createStreamProvider } = require('lightning-agent');
+const http = require('http');
+
+const wallet = createWallet('nostr+walletconnect://...');
+const provider = createStreamProvider(wallet, {
+  satsPerBatch: 2,       // charge 2 sats per batch
+  tokensPerBatch: 100,   // 100 tokens per batch
+  maxBatches: 50         // cap at 50 batches (100 sats max)
+});
+
+http.createServer(async (req, res) => {
+  await provider.handleRequest(req, res, async function* () {
+    // Your generator yields tokens/strings
+    for (const word of myTextGenerator(req)) {
+      yield word + ' ';
+    }
+  }, { firstBatchFree: true });
+}).listen(8080);
+```
+
+### Client (consumer)
+
+```javascript
+const { createWallet, createStreamClient } = require('lightning-agent');
+
+const wallet = createWallet('nostr+walletconnect://...');
+const client = createStreamClient(wallet, { maxSats: 200 });
+
+for await (const text of client.stream('https://api.example.com/generate', {
+  body: { prompt: 'Explain Lightning Network in 500 words' },
+  maxSats: 100 // budget for this stream
+})) {
+  process.stdout.write(text);
+}
+```
+
+### SSE Protocol
+
+The provider uses Server-Sent Events:
+
+```
+event: session    data: { "sessionId": "abc..." }
+event: content    data: { "tokens": "Hello world...", "batchIndex": 1 }
+event: invoice    data: { "invoice": "lnbc...", "sats": 2, "batchIndex": 2 }
+event: content    data: { "tokens": "more text...", "batchIndex": 2 }
+event: done       data: { "totalBatches": 5, "totalSats": 8, "totalTokens": 500 }
+```
+
+Client proves payment by POSTing `{ sessionId, preimage }` to the same URL.
+
+### API
+
+#### `createStreamProvider(wallet, opts?)`
+- `opts.satsPerBatch` — Sats per batch (default 1)
+- `opts.tokensPerBatch` — Tokens per batch (default 50)
+- `opts.maxBatches` — Max batches per stream (default 100)
+- `opts.paymentTimeoutMs` — Payment wait timeout (default 30000)
+
+Returns: `{ handleRequest(req, res, generator, opts?), activeSessions }`
+
+#### `createStreamClient(wallet, opts?)`
+- `opts.maxSats` — Budget cap (default 1000)
+- `opts.autoPay` — Auto-pay invoices (default true)
+
+Returns: `{ stream(url, opts?), budget }`
+
+---
+
+## Wallet API Reference
 
 ### `createWallet(nwcUrl?)`
+Create a wallet instance. Pass NWC URL directly or set `NWC_URL` env var.
 
-Create a wallet instance. Pass an NWC URL directly or set the `NWC_URL` environment variable.
-
-```javascript
-const wallet = createWallet('nostr+walletconnect://...');
-// or
-process.env.NWC_URL = 'nostr+walletconnect://...';
-const wallet = createWallet();
-```
-
-### `wallet.getBalance(opts?)`
-
-Get the wallet balance.
-
-```javascript
-const { balanceSats, balanceMsats } = await wallet.getBalance();
-```
-
-**Options:** `{ timeoutMs: 15000 }`
-
-### `wallet.createInvoice(opts)`
-
-Create a Lightning invoice (receive payment).
-
-```javascript
-const { invoice, paymentHash, amountSats } = await wallet.createInvoice({
-  amountSats: 100,
-  description: 'API call fee',
-  expiry: 3600,        // optional, seconds
-  timeoutMs: 15000     // optional
-});
-```
-
-### `wallet.payInvoice(invoice, opts?)`
-
-Pay a Lightning invoice.
-
-```javascript
-const { preimage, paymentHash } = await wallet.payInvoice('lnbc50u1p...');
-```
-
-**Options:** `{ timeoutMs: 30000 }`
-
-### `wallet.payAddress(address, opts)`
-
-Pay a Lightning address (user@domain) via LNURL-pay. Resolves the address to an invoice and pays it in one call.
-
-```javascript
-const result = await wallet.payAddress('alice@getalby.com', {
-  amountSats: 100,
-  comment: 'Great work!',  // optional
-  timeoutMs: 30000          // optional
-});
-// { preimage, paymentHash, invoice, amountSats }
-```
-
-### `wallet.waitForPayment(paymentHash, opts?)`
-
-Poll until an invoice is paid (or timeout).
-
-```javascript
-const { paid, preimage, settledAt } = await wallet.waitForPayment(hash, {
-  timeoutMs: 60000,      // total wait (default 60s)
-  pollIntervalMs: 2000   // poll frequency (default 2s)
-});
-```
-
-### `wallet.decodeInvoice(invoice)`
-
-Decode a bolt11 invoice offline (no wallet connection needed). Extracts amount and network.
-
-```javascript
-const { amountSats, network } = wallet.decodeInvoice('lnbc50u1p...');
-// { amountSats: 5000, network: 'mainnet', description: null, paymentHash: null }
-```
-
+### `wallet.getBalance(opts?)` → `{ balanceSats, balanceMsats }`
+### `wallet.createInvoice(opts)` → `{ invoice, paymentHash, amountSats }`
+### `wallet.payInvoice(invoice, opts?)` → `{ preimage, paymentHash }`
+### `wallet.payAddress(address, opts)` → `{ preimage, paymentHash, invoice, amountSats }`
+### `wallet.waitForPayment(hash, opts?)` → `{ paid, preimage, settledAt }`
+### `wallet.decodeInvoice(invoice)` → `{ amountSats, network }`
 ### `wallet.close()`
 
-Close the relay connection. Call when done.
-
-### `resolveLightningAddress(address, amountSats, comment?)`
-
-Resolve a Lightning address to a bolt11 invoice without paying (useful for inspection).
-
-```javascript
-const { resolveLightningAddress } = require('lightning-agent');
-const { invoice, minSats, maxSats } = await resolveLightningAddress('bob@walletofsatoshi.com', 50);
-```
-
-### `decodeBolt11(invoice)`
-
-Standalone bolt11 decoder (no wallet instance needed).
-
-```javascript
-const { decodeBolt11 } = require('lightning-agent');
-const { amountSats } = decodeBolt11('lnbc210n1p...');
-// amountSats = 21
-```
-
-### `parseNwcUrl(url)`
-
-Parse an NWC URL into its components.
-
-```javascript
-const { parseNwcUrl } = require('lightning-agent');
-const { walletPubkey, relay, secret } = parseNwcUrl('nostr+walletconnect://...');
-```
+### Standalone helpers
+- `resolveLightningAddress(address, amountSats, comment?)` — Resolve without paying
+- `decodeBolt11(invoice)` — Offline bolt11 decoder
+- `parseNwcUrl(url)` — Parse NWC URL into components
 
 ## CLI
 
 ```bash
-# Set your NWC URL
 export NWC_URL="nostr+walletconnect://..."
 
-# Check balance
 lightning-agent balance
-
-# Create an invoice for 50 sats
-lightning-agent invoice 50 "Text generation query"
-
-# Pay an invoice
+lightning-agent invoice 50 "API call fee"
 lightning-agent pay lnbc50u1p...
-
-# Decode an invoice (offline)
 lightning-agent decode lnbc50u1p...
-
-# Wait for a payment
 lightning-agent wait <payment_hash> [timeout_ms]
 ```
 
@@ -178,31 +279,20 @@ lightning-agent wait <payment_hash> [timeout_ms]
 
 You need a Nostr Wallet Connect URL from a compatible wallet:
 
-- **[Alby Hub](https://albyhub.com)** — Self-hosted Lightning node with NWC. Recommended for agents.
+- **[Alby Hub](https://albyhub.com)** — Self-hosted Lightning node with NWC. Recommended.
 - **[Mutiny Wallet](https://mutinywallet.com)** — Mobile-first with NWC support.
 - **[Coinos](https://coinos.io)** — Web wallet with NWC.
 
-The URL looks like: `nostr+walletconnect://<wallet_pubkey>?relay=wss://...&secret=<hex>`
-
-## How It Works
-
-lightning-agent uses the [NWC protocol (NIP-47)](https://github.com/nostr-protocol/nips/blob/master/47.md):
-
-1. Your agent signs NWC requests (kind 23194) with the secret from the NWC URL
-2. Requests are encrypted with NIP-04 and sent to the wallet's relay
-3. The wallet service processes the request and returns an encrypted response (kind 23195)
-4. All communication happens over Nostr relays — no direct connection to the wallet needed
-
 ## Design Philosophy
 
-This is built for AI agents, not humans:
+Built for AI agents, not humans:
 
 - **Minimal deps** — just `nostr-tools` and `ws`
-- **No UI** — pure code, works in any Node.js environment
-- **Reliable connections** — fresh relay connection per request for maximum reliability
+- **No UI** — pure code, any Node.js environment
+- **Fresh connections** — new relay connection per request for reliability
 - **Timeouts everywhere** — agents can't afford to hang
-- **Simple API** — `createInvoice` to charge, `payInvoice` to pay
+- **Composable** — auth + escrow + streaming + payments work together
 
 ## License
 
-MIT
+MIT — Built by [Jeletor](https://jeletor.com)
