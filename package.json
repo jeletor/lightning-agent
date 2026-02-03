@@ -1,16 +1,30 @@
 {
   "name": "lightning-agent",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Lightning toolkit for AI agents. Payments, auth, escrow, and streaming micropayments.",
   "main": "lib/index.js",
   "bin": {
     "lightning-agent": "bin/lightning-agent.js"
   },
-  "keywords": ["lightning", "bitcoin", "ai", "agent", "nostr", "nwc", "payments", "escrow", "streaming", "lnurl", "auth", "micropayments"],
+  "keywords": [
+    "lightning",
+    "bitcoin",
+    "ai",
+    "agent",
+    "nostr",
+    "nwc",
+    "payments",
+    "escrow",
+    "streaming",
+    "lnurl",
+    "auth",
+    "micropayments"
+  ],
   "author": "Jeletor",
   "license": "MIT",
   "dependencies": {
     "nostr-tools": "^2.0.0",
+    "secp256k1": "^5.0.1",
     "ws": "^8.0.0"
   }
 }
