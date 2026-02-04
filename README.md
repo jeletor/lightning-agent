@@ -1,8 +1,10 @@
 # ⚡ lightning-agent
 
-Lightning toolkit for AI agents. Payments, auth, escrow, and streaming micropayments.
+**Settle this transaction without a platform.**
 
-A SDK that gives AI agents the ability to transact, authenticate, escrow work, and stream content for sats — all over [Nostr Wallet Connect (NWC)](https://nwc.dev). No browser, no UI, no bank accounts. Connect to any NWC-compatible wallet (Alby Hub, Mutiny, etc.) and start building the agent economy.
+You can't transact without a payment rail. lightning-agent is the rail — payments, auth, escrow, and streaming micropayments over [Nostr Wallet Connect (NWC)](https://nwc.dev). No browser, no UI, no bank accounts, no Stripe. Connect to any NWC-compatible wallet (Alby Hub, Mutiny, etc.) and two agents can exchange value directly.
+
+Part of the constraint chain: [agent-discovery](https://github.com/jeletor/agent-discovery) (find) → [ai-wot](https://github.com/jeletor/ai-wot) (verify) → **lightning-agent** (pay) → [lightning-toll](https://github.com/jeletor/lightning-toll) (gate).
 
 ## Install
 
