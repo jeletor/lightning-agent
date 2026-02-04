@@ -1,6 +1,6 @@
 {
   "name": "lightning-agent",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Lightning toolkit for AI agents. Payments, auth, escrow, and streaming micropayments.",
   "main": "lib/index.js",
   "bin": {
