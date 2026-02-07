@@ -154,8 +154,36 @@ delete process.env.NWC_URL;
 
 assertThrows(() => createWallet(), 'createWallet() throws without URL or env');
 
+// ─── Batch Payment Methods ───
+console.log('\n📦 Batch Payment Methods');
+
+const walletForBatch = createWallet(testNwcUrl);
+
+// payBatch validation
+const batchTests = Promise.all([
+  // Test empty array
+  walletForBatch.payBatch([])
+    .then(() => assert(false, 'payBatch rejects empty array'))
+    .catch(e => assert(e.message.includes('required'), 'payBatch rejects empty array')),
+  
+  // Test non-array
+  walletForBatch.payBatch('not an array')
+    .then(() => assert(false, 'payBatch rejects non-array'))
+    .catch(e => assert(e.message.includes('required'), 'payBatch rejects non-array')),
+    
+  // payAddresses validation
+  walletForBatch.payAddresses([])
+    .then(() => assert(false, 'payAddresses rejects empty array'))
+    .catch(e => assert(e.message.includes('required'), 'payAddresses rejects empty array')),
+]).then(() => {
+  // Test that methods exist with correct signatures
+  assert(typeof walletForBatch.payBatch === 'function', 'payBatch method exists');
+  assert(typeof walletForBatch.payAddresses === 'function', 'payAddresses method exists');
+  walletForBatch.close();
+});
+
 // ─── Summary (wait for async tests) ───
-addrTests.then(() => {
+Promise.all([addrTests, batchTests]).then(() => {
   console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`Results: ${passed} passed, ${failed} failed`);
   if (failed > 0) {

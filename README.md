@@ -53,6 +53,44 @@ wallet.close();
 
 ---
 
+## Batch Payments
+
+Pay multiple invoices or addresses in parallel with concurrency control:
+
+```javascript
+const wallet = createWallet('nostr+walletconnect://...');
+
+// Pay multiple invoices at once
+const { results, successCount, totalSats } = await wallet.payBatch([
+  'lnbc100n1...',
+  'lnbc200n1...',
+  'lnbc300n1...'
+], {
+  concurrency: 3,      // Max parallel payments
+  stopOnError: false   // Continue even if one fails
+});
+
+console.log(`Paid ${successCount} invoices, total ${totalSats} sats`);
+
+// Pay multiple Lightning addresses
+const { results: addrResults } = await wallet.payAddresses([
+  { address: 'alice@getalby.com', amountSats: 50, comment: 'Thanks!' },
+  { address: 'bob@walletofsatoshi.com', amountSats: 100 },
+  { address: 'carol@strike.me', amountSats: 75 }
+], { concurrency: 2 });
+
+// Check individual results
+for (const r of results) {
+  if (r.success) {
+    console.log(`✓ Paid ${r.amountSats} sats, preimage: ${r.preimage}`);
+  } else {
+    console.log(`✗ Failed: ${r.error}`);
+  }
+}
+```
+
+---
+
 ## Auth (LNURL-auth)
 
 Login with a Lightning wallet. No passwords, no OAuth — just a signed cryptographic challenge.
